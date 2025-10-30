@@ -1,0 +1,23 @@
+[package]
+name = "reverse-proxy"
+version = "0.1.0"
+edition = "2021"
+authors = ["jvtubergen"]
+description = "A minimal reverse proxy for path-based HTTP routing with optional URL rewriting"
+license = "MIT"
+repository = "https://github.com/jvtubergen/reverse-proxy"
+homepage = "https://github.com/jvtubergen/reverse-proxy"
+documentation = "https://docs.rs/reverse-proxy"
+readme = "README.md"
+keywords = ["proxy", "reverse-proxy", "routing", "http", "async"]
+categories = ["network-programming", "web-programming::http-server", "command-line-utilities"]
+rust-version = "1.70"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+clap = { version = "4.5", features = ["derive"] }
+httparse = "1.8"
