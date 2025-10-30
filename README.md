@@ -1,15 +1,16 @@
 # reverse-proxy
 
-_Path-based reverse proxy with bidirectional binary streaming_
+_A minimal reverse proxy for path-based HTTP routing._
 
-A high-performance reverse proxy written in Rust that routes HTTP requests to different backend servers based on URL paths. Uses efficient bidirectional binary streaming with minimal overhead.
+A lightweight, high-performance reverse proxy written in Rust. Routes HTTP requests to different backend servers based on URL paths using efficient bidirectional binary streaming with minimal overhead.
 
-**Note:** This initial release does **not** perform URL rewriting. The complete original path is forwarded unchanged to the backend server.
+**Note:** URL path rewriting is available via the `--rewrite` flag (disabled by default). When disabled, the complete original path is forwarded unchanged to the backend server.
 
 ## Features
 
 - **Path-based routing** - Route requests to different backends based on URL paths
 - **Prefix matching** - Supports both exact and prefix-based path matching (longest match wins)
+- **Optional path rewriting** - Strip matched route prefixes from forwarded requests
 - **Binary streaming** - Forwards raw TCP bytes without parsing HTTP bodies
 - **High performance** - Minimal overhead using tokio async I/O
 - **Protocol agnostic** - Supports HTTP/1.1, HTTP/2, WebSockets, and Server-Sent Events
@@ -62,6 +63,7 @@ reverse-proxy <LISTEN_ADDRESS> <DEFAULT_BACKEND> [OPTIONS]
 - `-r, --route <PATH=BACKEND>` - Add a path-based route (can be specified multiple times)
   - Format: `/path=ip:port`
   - Path must start with `/`
+- `--rewrite` - Enable path rewriting (strips matched route prefix from forwarded requests)
 
 ### Examples
 
@@ -115,15 +117,39 @@ Request routing:
 - `GET /webhook/stripe` → `backend3:6000` (prefix match)
 - `GET /other` → default backend (no match)
 
-### No URL Rewriting
+### URL Path Rewriting
 
-The complete original path is forwarded to the backend server unchanged.
+By default, the complete original path is forwarded to the backend server unchanged. You can enable path rewriting with the `--rewrite` flag to strip the matched route prefix.
 
-For example, with route `-r /api=127.0.0.1:4000`:
+#### Without path rewriting (default)
+
+With route `-r /api=127.0.0.1:4000`:
 - Client requests: `GET /api/users`
 - Backend receives: `GET /api/users` (unchanged)
 
-If you need the backend to receive `GET /users` instead, you'll need to configure your backend to handle the `/api` prefix.
+#### With path rewriting (`--rewrite`)
+
+With route `-r /api=127.0.0.1:4000 --rewrite`:
+- Client requests: `GET /api/users`
+- Backend receives: `GET /users` (prefix stripped)
+
+**Examples:**
+
+```bash
+# Without rewriting (default)
+reverse-proxy 0.0.0.0:8080 127.0.0.1:3000 -r /api=127.0.0.1:4000
+# Request to /api/test -> backend receives /api/test
+
+# With rewriting
+reverse-proxy 0.0.0.0:8080 127.0.0.1:3000 -r /api=127.0.0.1:4000 --rewrite
+# Request to /api/test -> backend receives /test
+```
+
+**Path rewriting behavior:**
+- Strips the matched route prefix from the request path
+- Ensures the rewritten path always starts with `/`
+- Works with both exact and prefix matches
+- Only rewrites if a route matches (default backend requests are never rewritten)
 
 ## Architecture
 

@@ -19,15 +19,20 @@ struct Args {
     /// Path-based routes in the format /path=ip:port (can be specified multiple times)
     #[arg(short = 'r', long = "route", value_name = "PATH=BACKEND")]
     routes: Vec<String>,
+
+    /// Enable path rewriting (strip matched route prefix from forwarded requests)
+    #[arg(long = "rewrite", default_value_t = false)]
+    rewrite: bool,
 }
 
 struct RouteConfig {
     default_backend: String,
     routes: HashMap<String, String>,
+    rewrite_paths: bool,
 }
 
 impl RouteConfig {
-    fn new(default_backend: String, route_args: Vec<String>) -> Result<Self, String> {
+    fn new(default_backend: String, route_args: Vec<String>, rewrite_paths: bool) -> Result<Self, String> {
         let mut routes = HashMap::new();
 
         for route in route_args {
@@ -49,27 +54,33 @@ impl RouteConfig {
         Ok(RouteConfig {
             default_backend,
             routes,
+            rewrite_paths,
         })
     }
 
-    fn get_backend(&self, path: &str) -> &str {
+    fn get_backend_and_prefix<'a>(&'a self, path: &str) -> (&'a str, &'a str) {
         // Try exact match first
         if let Some(backend) = self.routes.get(path) {
-            return backend;
-        }
-
-        // Try prefix matching (longest match wins)
-        let mut best_match = "";
-        let mut best_backend = &self.default_backend;
-
-        for (route_path, backend) in &self.routes {
-            if path.starts_with(route_path) && route_path.len() > best_match.len() {
-                best_match = route_path;
-                best_backend = backend;
+            // For exact match, return the route path from the HashMap
+            for route_path in self.routes.keys() {
+                if route_path == path {
+                    return (backend.as_str(), route_path.as_str());
+                }
             }
         }
 
-        best_backend
+        // Try prefix matching (longest match wins)
+        let mut best_match: &str = "";
+        let mut best_backend = self.default_backend.as_str();
+
+        for (route_path, backend) in &self.routes {
+            if path.starts_with(route_path.as_str()) && route_path.len() > best_match.len() {
+                best_match = route_path.as_str();
+                best_backend = backend.as_str();
+            }
+        }
+
+        (best_backend, best_match)
     }
 }
 
@@ -134,18 +145,74 @@ fn find_header_end(data: &[u8]) -> Option<usize> {
     None
 }
 
+/// Rewrite the HTTP request path by stripping the matched route prefix
+/// Returns the modified request data
+fn rewrite_request_path(request_data: &[u8], _original_path: &str, prefix_to_strip: &str) -> Vec<u8> {
+    // If no prefix to strip or prefix is empty, return original data
+    if prefix_to_strip.is_empty() {
+        return request_data.to_vec();
+    }
+
+    // Parse the request line to find where the path is
+    let request_str = String::from_utf8_lossy(request_data);
+    let lines: Vec<&str> = request_str.lines().collect();
+
+    if lines.is_empty() {
+        return request_data.to_vec();
+    }
+
+    // Parse the first line: "METHOD /path HTTP/version"
+    let first_line = lines[0];
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
+
+    if parts.len() != 3 {
+        return request_data.to_vec();
+    }
+
+    let method = parts[0];
+    let path = parts[1];
+    let version = parts[2];
+
+    // Strip the prefix from the path
+    let new_path = if path.starts_with(prefix_to_strip) {
+        let stripped = &path[prefix_to_strip.len()..];
+        // Ensure the path starts with / (if it's empty, use /)
+        if stripped.is_empty() || !stripped.starts_with('/') {
+            format!("/{}", stripped)
+        } else {
+            stripped.to_string()
+        }
+    } else {
+        path.to_string()
+    };
+
+    // Reconstruct the request
+    let new_first_line = format!("{} {} {}", method, new_path, version);
+
+    // Find where the first line ends in the original request
+    if let Some(first_line_end) = request_data.iter().position(|&b| b == b'\r' || b == b'\n') {
+        let mut new_request = Vec::new();
+        new_request.extend_from_slice(new_first_line.as_bytes());
+        new_request.extend_from_slice(&request_data[first_line_end..]);
+        new_request
+    } else {
+        request_data.to_vec()
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
 
     // Parse the routing configuration
-    let config = RouteConfig::new(args.default_backend.clone(), args.routes)?;
+    let config = RouteConfig::new(args.default_backend.clone(), args.routes, args.rewrite)?;
 
     let addr = args.listen_address.parse::<SocketAddr>()?;
     let listener = TcpListener::bind(addr).await?;
 
     println!("Reverse proxy listening on http://{}", addr);
     println!("Default backend: http://{}", config.default_backend);
+    println!("Path rewriting: {}", if config.rewrite_paths { "enabled" } else { "disabled" });
 
     if !config.routes.is_empty() {
         println!("\nPath-based routes:");
@@ -170,10 +237,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             };
 
-            // Determine which backend to use based on the path
-            let backend_addr = config.get_backend(&path);
+            // Determine which backend to use based on the path and get the matched prefix
+            let (backend_addr, matched_prefix) = config.get_backend_and_prefix(&path);
 
-            println!("[{}] {} -> {}", client_addr, path, backend_addr);
+            // Rewrite the path if enabled
+            let final_request_data = if config.rewrite_paths {
+                let rewritten = rewrite_request_path(&request_data, &path, matched_prefix);
+
+                // Extract the new path for logging
+                let new_path = if !matched_prefix.is_empty() && path.starts_with(matched_prefix) {
+                    let stripped = &path[matched_prefix.len()..];
+                    if stripped.is_empty() || !stripped.starts_with('/') {
+                        format!("/{}", stripped)
+                    } else {
+                        stripped.to_string()
+                    }
+                } else {
+                    path.clone()
+                };
+
+                println!("[{}] {} -> {} (rewritten to {})", client_addr, path, backend_addr, new_path);
+                rewritten
+            } else {
+                println!("[{}] {} -> {}", client_addr, path, backend_addr);
+                request_data
+            };
 
             // Connect to the backend server
             let mut backend_stream = match TcpStream::connect(backend_addr).await {
@@ -188,8 +276,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             };
 
-            // Forward the original request to the backend
-            if let Err(e) = backend_stream.write_all(&request_data).await {
+            // Forward the (possibly rewritten) request to the backend
+            if let Err(e) = backend_stream.write_all(&final_request_data).await {
                 eprintln!("Failed to forward request to backend: {}", e);
                 return;
             }
