@@ -1,4 +1,4 @@
-# reverse-proxy
+# reverse-http-proxy
 
 _A minimal reverse proxy for path-based HTTP routing._
 
@@ -20,10 +20,10 @@ A lightweight, high-performance reverse proxy written in Rust. Routes HTTP reque
 
 ```bash
 # Basic usage with default backend only
-reverse-proxy 0.0.0.0:8080 127.0.0.1:3000
+reverse-http-proxy 0.0.0.0:8080 127.0.0.1:3000
 
 # With path-based routing
-reverse-proxy 0.0.0.0:8080 127.0.0.1:3000 \
+reverse-http-proxy 0.0.0.0:8080 127.0.0.1:3000 \
   -r /api=127.0.0.1:4000 \
   -r /webhook=127.0.0.1:5000
 ```
@@ -39,18 +39,18 @@ In this example:
 You'll need Rust installed. Get it from [rustup.rs](https://rustup.rs/).
 
 ```bash
-cd reverse-proxy
+cd reverse-http-proxy
 cargo build --release
 ```
 
-The binary will be at `target/release/reverse-proxy`.
+The binary will be at `target/release/reverse-http-proxy`.
 
 ## Usage
 
 ### Basic Syntax
 
 ```bash
-reverse-proxy <LISTEN_ADDRESS> <DEFAULT_BACKEND> [OPTIONS]
+reverse-http-proxy <LISTEN_ADDRESS> <DEFAULT_BACKEND> [OPTIONS]
 ```
 
 ### Arguments
@@ -69,7 +69,7 @@ reverse-proxy <LISTEN_ADDRESS> <DEFAULT_BACKEND> [OPTIONS]
 
 #### API Gateway pattern
 ```bash
-reverse-proxy 0.0.0.0:80 127.0.0.1:3000 \
+reverse-http-proxy 0.0.0.0:80 127.0.0.1:3000 \
   -r /api/v1=127.0.0.1:4001 \
   -r /api/v2=127.0.0.1:4002 \
   -r /admin=127.0.0.1:5000 \
@@ -78,7 +78,7 @@ reverse-proxy 0.0.0.0:80 127.0.0.1:3000 \
 
 #### Microservices routing
 ```bash
-reverse-proxy 0.0.0.0:8080 127.0.0.1:3000 \
+reverse-http-proxy 0.0.0.0:8080 127.0.0.1:3000 \
   -r /users=127.0.0.1:4001 \
   -r /orders=127.0.0.1:4002 \
   -r /payments=127.0.0.1:4003
@@ -86,7 +86,7 @@ reverse-proxy 0.0.0.0:8080 127.0.0.1:3000 \
 
 #### Webhook fanout
 ```bash
-reverse-proxy 0.0.0.0:8080 127.0.0.1:3000 \
+reverse-http-proxy 0.0.0.0:8080 127.0.0.1:3000 \
   -r /webhook/github=127.0.0.1:5000 \
   -r /webhook/stripe=127.0.0.1:5001 \
   -r /webhook/slack=127.0.0.1:5002
@@ -137,11 +137,11 @@ With route `-r /api=127.0.0.1:4000 --rewrite`:
 
 ```bash
 # Without rewriting (default)
-reverse-proxy 0.0.0.0:8080 127.0.0.1:3000 -r /api=127.0.0.1:4000
+reverse-http-proxy 0.0.0.0:8080 127.0.0.1:3000 -r /api=127.0.0.1:4000
 # Request to /api/test -> backend receives /api/test
 
 # With rewriting
-reverse-proxy 0.0.0.0:8080 127.0.0.1:3000 -r /api=127.0.0.1:4000 --rewrite
+reverse-http-proxy 0.0.0.0:8080 127.0.0.1:3000 -r /api=127.0.0.1:4000 --rewrite
 # Request to /api/test -> backend receives /test
 ```
 

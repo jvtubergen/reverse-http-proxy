@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(name = "reverse-proxy")]
+#[command(name = "reverse-http-proxy")]
 #[command(about = "Path-based reverse proxy with bidirectional binary streaming", long_about = None)]
 struct Args {
     /// Address to listen on (format: ip:port)

@@ -223,7 +223,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "reverse-proxy"
+name = "reverse-http-proxy"
 version = "0.1.0"
 dependencies = [
  "clap",
